@@ -7,3 +7,4 @@ tensor-parallel
 tqdm
 accelerate
 peft
+pyarrow
