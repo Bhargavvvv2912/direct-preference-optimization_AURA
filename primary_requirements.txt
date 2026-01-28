@@ -5,3 +5,5 @@ datasets
 hydra-core
 tensor-parallel
 tqdm
+accelerate
+peft
