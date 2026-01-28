@@ -1,0 +1,7 @@
+numpy
+torch
+transformers
+datasets
+hydra-core
+tensor-parallel
+tqdm
