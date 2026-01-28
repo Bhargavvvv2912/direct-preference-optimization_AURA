@@ -12,7 +12,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      
+      - name: 🧹 Free Disk Space (Aggressive Cleanup)
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h # Verify we have space now
 
+          
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
