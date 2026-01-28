@@ -607,11 +607,8 @@ class DependencyAgent:
         return True, {package: current_version}, None
     
     def _heal_with_filter_and_scan(self, package, last_good_version, failed_version, baseline_reqs_path):
-        start_group(f"Healing '{package}': Filter-Then-Scan Strategy")
+        start_group(f"Healing '{package}': Greedy Modernization Strategy")
         
-        last_stderr = "" 
-
-        print("\n--- Phase 1: Filtering for compatible versions ---")
         candidate_versions = self.get_all_versions_between(package, last_good_version, failed_version)
         if not candidate_versions:
             print("No intermediate versions to test."); end_group()
@@ -624,55 +621,55 @@ class DependencyAgent:
                 if line and not line.startswith('#') and self._get_package_name_from_spec(line) != package:
                     fixed_constraints.append(line)
 
-        installable_versions = []
+        # Persistent venv for fast dry-run compatibility checks
         venv_dir = Path("./temp_pip_check")
         if venv_dir.exists(): shutil.rmtree(venv_dir)
         venv.create(venv_dir, with_pip=True)
         python_executable = str((venv_dir / "bin" / "python").resolve())
         
+        last_error_log = ""
+
+        # WALK BACKWARDS: From Newest to Oldest
         for version in reversed(candidate_versions):
-            print(f"  -> Checking compatibility of {package}=={version}...")
-            requirements_list_for_check = fixed_constraints + [f"{package}=={version}"]
+            print(f"\n[Greedy Search] Testing {package}=={version}...")
             
+            # 1. Fast Gatekeeper (Dry-run for Python/Env compatibility)
+            requirements_list_for_check = fixed_constraints + [f"{package}=={version}"]
             pip_command = [
                 python_executable, "-m", "pip", "install", 
-                "--no-build-isolation", 
-                "--no-cache-dir", 
-                "--dry-run"
+                "--no-build-isolation", "--no-cache-dir", "--dry-run"
             ] + requirements_list_for_check
             
             _, stderr, returncode = run_command(pip_command, display_command=False)
 
-            if returncode == 0:
-                print(f"     -- Compatible.")
-                installable_versions.append(version)
-            else:
-                last_stderr = stderr
+            if returncode != 0:
+                last_error_log = stderr
                 summary = self._get_error_summary(stderr)
-                print(f"     -- Incompatible. Diagnosis: {summary}")
-        
-        if venv_dir.exists(): shutil.rmtree(venv_dir)
-
-        print("\n--- Phase 2: Validating compatible versions (newest first) ---")
-        if not installable_versions:
-            print("Result: No compatible versions were found. Reverting to last known good version.")
-            end_group()
-            return last_good_version, last_stderr
-        
-        print(f"Found {len(installable_versions)} compatible versions to test: {installable_versions}")
-
-        for version_to_test in installable_versions:
-            success, _, _ = self._try_install_and_validate(
-                package, version_to_test, [], baseline_reqs_path, is_probe=True
+                print(f"  -> Incompatible (Dry-run failed). Reason: {summary}")
+                continue 
+            
+            print(f"  -> Installable. Proceeding to Full Functional Validation...")
+            
+            # 2. Full Functional Check (The Commit Gate)
+            # This creates 'temp_venv' and runs the validation script
+            success, result_data, validation_stderr = self._try_install_and_validate(
+                package, version, [], baseline_reqs_path, is_probe=True
             )
+            
             if success:
-                print(f"\nSUCCESS: Found latest working version: {package}=={version_to_test}")
+                print(f"  -> SUCCESS: {package}=={version} is provably stable.")
+                print(f"  -> GREEDY COMMIT: Found peak version. Moving to next package.")
+                if venv_dir.exists(): shutil.rmtree(venv_dir)
                 end_group()
-                return version_to_test, ""
-        
-        print("\nResult: No compatible version passed validation. Reverting to last known good version.")
+                return version, ""
+            else:
+                last_error_log = validation_stderr
+                print(f"  -> Validation Failed. Rolling back to next oldest version...")
+
+        if venv_dir.exists(): shutil.rmtree(venv_dir)
+        print(f"\nResult: No intermediate versions passed validation. Reverting to {last_good_version}.")
         end_group()
-        return last_good_version, last_stderr
+        return last_good_version, last_error_log
     
     def get_all_versions_between(self, package_name, start_ver_str, end_ver_str):
         try:
