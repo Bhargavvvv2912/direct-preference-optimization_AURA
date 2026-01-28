@@ -607,7 +607,7 @@ class DependencyAgent:
         return True, {package: current_version}, None
     
     def _heal_with_filter_and_scan(self, package, last_good_version, failed_version, baseline_reqs_path):
-        start_group(f"Healing '{package}': Greedy Modernization Strategy")
+        start_group(f"Healing '{package}': Reverse Linear scan from {failed_version} to {last_good_version}")
         
         candidate_versions = self.get_all_versions_between(package, last_good_version, failed_version)
         if not candidate_versions:
@@ -631,7 +631,7 @@ class DependencyAgent:
 
         # WALK BACKWARDS: From Newest to Oldest
         for version in reversed(candidate_versions):
-            print(f"\n[Greedy Search] Testing {package}=={version}...")
+            print(f"\nTesting {package}=={version}...")
             
             # 1. Fast Gatekeeper (Dry-run for Python/Env compatibility)
             requirements_list_for_check = fixed_constraints + [f"{package}=={version}"]
